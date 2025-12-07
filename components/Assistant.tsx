@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useBaking } from '../context/BakingContext';
 import { askBaker } from '../services/gemini';
 import { Sparkles, Send } from 'lucide-react';
 
@@ -7,6 +8,7 @@ interface AssistantProps {
 }
 
 const Assistant: React.FC<AssistantProps> = ({ stepName }) => {
+  const { roomTemp, hydration, flourWeight, timerEndTime } = useBaking();
   const [query, setQuery] = useState('');
   const [response, setResponse] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -17,20 +19,28 @@ const Assistant: React.FC<AssistantProps> = ({ stepName }) => {
 
     setLoading(true);
     setResponse(null);
-    const answer = await askBaker(query, stepName);
+
+    // Construct rich context
+    const context = `
+      Current Step: ${stepName}
+      Environment: Room Temp ${roomTemp}°C, Hydration ${hydration}%, Flour ${flourWeight}g.
+      Timer: ${timerEndTime ? 'Running' : 'Stopped'}.
+    `.trim();
+
+    const answer = await askBaker(query, context);
     setResponse(answer);
     setLoading(false);
   };
 
   return (
-    <div className="mt-2 bg-white rounded-lg p-1">
-      <div className="flex items-center gap-2 mb-3 px-1 text-crust/80">
-        <Sparkles size={14} strokeWidth={1.5} />
+    <div className="mt-4 bg-white dark:bg-stone-800 rounded-xl p-1 border border-stone-100 dark:border-stone-700 shadow-sm">
+      <div className="flex items-center gap-2 mb-3 px-2 pt-2 text-stone-500 dark:text-stone-400">
+        <Sparkles size={14} strokeWidth={1.5} className="text-sage" />
         <span className="text-[10px] font-bold uppercase tracking-widest">Levain Assistant</span>
       </div>
-      
+
       {response && (
-        <div className="mb-4 text-sm font-sans font-light leading-relaxed text-stone-700 bg-paper p-3 rounded-lg border border-sand">
+        <div className="mb-3 text-sm font-sans font-light leading-relaxed text-charcoal dark:text-stone-200 bg-sand/30 dark:bg-stone-700/50 p-3 rounded-lg border border-sand dark:border-stone-700">
           {response}
         </div>
       )}
@@ -41,15 +51,15 @@ const Assistant: React.FC<AssistantProps> = ({ stepName }) => {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={`שאל שאלה על שלב זה...`}
-          className="w-full bg-stone-50 border border-transparent focus:bg-white focus:border-stone-200 rounded-lg py-2.5 px-3 pr-10 text-sm placeholder:text-stone-400 focus:outline-none transition-all font-sans"
+          className="w-full bg-stone-50 dark:bg-stone-900 border border-transparent focus:bg-white dark:focus:bg-stone-800 focus:border-stone-200 dark:focus:border-stone-600 rounded-lg py-3 px-4 pr-10 text-sm placeholder:text-stone-400 text-charcoal dark:text-stone-200 focus:outline-none transition-all font-sans"
         />
-        <button 
-          type="submit" 
+        <button
+          type="submit"
           disabled={loading}
-          className="absolute left-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-crust disabled:opacity-50 transition-colors"
+          className="absolute left-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-sage dark:hover:text-sage disabled:opacity-50 transition-colors"
         >
           {loading ? (
-            <div className="w-4 h-4 border-2 border-stone-200 border-t-crust rounded-full animate-spin"></div>
+            <div className="w-4 h-4 border-2 border-stone-200 border-t-sage rounded-full animate-spin"></div>
           ) : (
             <Send size={16} strokeWidth={1.5} />
           )}

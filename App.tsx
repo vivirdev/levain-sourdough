@@ -3,7 +3,8 @@ import { BakingProvider, useBaking } from './context/BakingContext';
 import Calculator from './components/Calculator';
 import StepWizard from './components/StepWizard';
 import OverviewModal from './components/OverviewModal';
-import { ArrowRight, Menu, Moon, Sun } from 'lucide-react';
+import BakeJournal from './components/BakeJournal';
+import { ArrowRight, Menu, Moon, Sun, Book, WifiOff } from 'lucide-react';
 
 const GlobalTimer: React.FC = () => {
     const { activeStepId, timerEndTime, formatTime, steps, currentStepIndex, goToStep } = useBaking();
@@ -45,6 +46,19 @@ const GlobalTimer: React.FC = () => {
     );
 };
 
+// Simple Component for the Header Timer Display
+const HeaderTimerDisplay: React.FC<{ endTime: number }> = ({ endTime }) => {
+    const { formatTime } = useBaking();
+    const [timeLeft, setTimeLeft] = useState(Math.max(0, endTime - Date.now()));
+
+    useEffect(() => {
+        const i = setInterval(() => setTimeLeft(Math.max(0, endTime - Date.now())), 1000);
+        return () => clearInterval(i);
+    }, [endTime]);
+
+    return <>{formatTime(timeLeft)}</>;
+};
+
 const BatterySaverOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const { activeStepId, timerEndTime, formatTime, steps } = useBaking();
     const [timeLeft, setTimeLeft] = React.useState(0);
@@ -79,9 +93,25 @@ const BatterySaverOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => 
 };
 
 const MainView: React.FC = () => {
-    const { isWizardActive, exitWizard, activeStepId } = useBaking();
+    const { isWizardActive, exitWizard, activeStepId, isDarkMode, toggleTheme, steps, timerEndTime } = useBaking();
     const [isOverviewOpen, setIsOverviewOpen] = useState(false);
-    const [isDimMode, setIsDimMode] = useState(false);
+    const [isJournalOpen, setIsJournalOpen] = useState(false);
+
+    // Find active step for header title
+    const activeStep = steps.find(s => s.id === activeStepId);
+
+    // Offline Detection
+    const [isOnline, setIsOnline] = useState(navigator.onLine);
+    useEffect(() => {
+        const handleOnline = () => setIsOnline(true);
+        const handleOffline = () => setIsOnline(false);
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+    }, []);
 
     // Wake Lock API: Keep screen on while wizard is active
     useEffect(() => {
@@ -99,67 +129,85 @@ const MainView: React.FC = () => {
         requestWakeLock();
 
         return () => {
-            if (wakeLock) wakeLock.release();
+            if (wakeLock) console.log('Wake Lock released');
         };
     }, [isWizardActive]);
 
     return (
-        <div className="min-h-screen bg-cream font-sans text-charcoal selection:bg-sage/20 selection:text-charcoal flex flex-col">
-            {/* Dim Mode Overlay */}
-            {isDimMode && <BatterySaverOverlay onClose={() => setIsDimMode(false)} />}
+        <div className="h-[100dvh] w-full max-w-md mx-auto bg-cream dark:bg-zinc-900 shadow-2xl overflow-hidden relative transition-colors duration-500 flex flex-col supports-[height:100svh]:h-[100svh]">
 
-            {/* Header */}
-            <header className={`z-40 px-6 py-0 transition-all relative ${isWizardActive ? 'bg-cream' : 'bg-transparent'}`}>
-                <GlobalTimer />
+            {/* Global Header */}
+            <header className="flex-none px-6 pt-safe-top pb-2 flex items-center justify-between z-50 bg-cream/80 dark:bg-zinc-900/80 backdrop-blur-md sticky top-0 border-b border-stone-100 dark:border-stone-800 transition-colors">
+                {isWizardActive ? (
+                    <button
+                        onClick={exitWizard}
+                        className="p-2 -ml-2 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-500 dark:text-stone-400 transition-colors"
+                    >
+                        <ArrowRight size={24} strokeWidth={1.5} />
+                    </button>
+                ) : (
+                    <div className="w-10"></div> // Spacer
+                )}
 
-                <div className="max-w-md mx-auto flex justify-between items-center">
-                    <div className="flex items-center gap-3 w-12">
-                        {isWizardActive ? (
-                            <button onClick={exitWizard} className="p-2 -ml-2 text-stone-400 hover:text-charcoal transition-colors rounded-full hover:bg-stone-100">
-                                <ArrowRight size={20} strokeWidth={1.5} />
-                            </button>
-                        ) : (
-                            <div />
-                        )}
-                    </div>
+                {/* Dynamic Title / Offline Badge */}
+                <div className="flex flex-col items-center">
+                    {!isOnline ? (
+                        <div className="flex items-center gap-2 text-stone-400 bg-stone-100 dark:bg-stone-800 px-3 py-1 rounded-full animate-pulse">
+                            <WifiOff size={14} />
+                            <span className="text-xs font-bold uppercase tracking-widest">Offline</span>
+                        </div>
+                    ) : activeStep ? (
+                        <span className="font-serif text-lg text-charcoal dark:text-stone-200 animate-fadeIn tracking-wide">
+                            {activeStep.title}
+                        </span>
+                    ) : (
+                        <span className="font-serif text-lg text-charcoal dark:text-stone-200 tracking-wider">
+                            LEVAIN
+                        </span>
+                    )}
+                </div>
 
-                    <h1 className={`font-serif text-xl text-charcoal tracking-wide transition-opacity duration-500 ${isWizardActive ? 'opacity-100' : 'opacity-0'}`}>
-                        Levain
-                    </h1>
-
-                    <div className="flex justify-end items-center gap-1">
-                        {isWizardActive && activeStepId && (
-                            <button
-                                onClick={() => setIsDimMode(true)}
-                                className="p-2 text-stone-400 hover:text-charcoal transition-colors rounded-full hover:bg-stone-100"
-                                title="מצב חיסכון בסוללה"
-                            >
-                                <Moon size={20} strokeWidth={1.5} />
-                            </button>
-                        )}
-                        {isWizardActive && (
-                            <button
-                                onClick={() => setIsOverviewOpen(true)}
-                                className="p-2 -mr-2 text-stone-400 hover:text-charcoal transition-colors rounded-full hover:bg-stone-100"
-                            >
-                                <Menu size={20} strokeWidth={1.5} />
-                            </button>
-                        )}
-                    </div>
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={() => setIsJournalOpen(true)}
+                        className="p-2 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 dark:text-stone-500 transition-colors"
+                    >
+                        <Book size={20} strokeWidth={1.5} />
+                    </button>
+                    <button
+                        onClick={toggleTheme}
+                        className="p-2 -mr-2 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 dark:text-stone-500 transition-colors"
+                    >
+                        {isDarkMode ? <Sun size={20} strokeWidth={1.5} /> : <Moon size={20} strokeWidth={1.5} />}
+                    </button>
                 </div>
             </header>
 
-            {/* Content Area */}
-            <main className="flex-1 max-w-md mx-auto w-full relative">
-                {isWizardActive ? (
-                    <StepWizard />
-                ) : (
-                    <Calculator />
-                )}
+            {/* Global Timer (Floating below header) */}
+            {timerEndTime && activeStepId && (
+                <div className="flex-none px-4 py-2 animate-slideUp z-40 bg-cream dark:bg-zinc-900 transition-colors">
+                    <div className="bg-charcoal dark:bg-stone-800 text-white dark:text-stone-200 rounded-xl p-3 shadow-lg shadow-charcoal/10 flex items-center justify-between border border-white/10 dark:border-stone-700">
+                        <div className="flex items-center gap-3">
+                            <div className="relative">
+                                <span className="relative z-10 block w-2 h-2 rounded-full bg-red-500"></span>
+                                <span className="absolute inset-0 rounded-full bg-red-400 animate-ping opacity-75"></span>
+                            </div>
+                            <span className="font-mono text-sm tracking-widest uppercase text-stone-400">Timer Active</span>
+                        </div>
+                        <span className="font-mono text-xl font-bold tracking-wider">
+                            <HeaderTimerDisplay endTime={timerEndTime} />
+                        </span>
+                    </div>
+                </div>
+            )}
+
+            {/* Main Content Area - Scrollable */}
+            <main className="flex-1 overflow-hidden relative">
+                {isWizardActive ? <StepWizard /> : <Calculator />}
             </main>
 
-            {/* Overview Drawer */}
             <OverviewModal isOpen={isOverviewOpen} onClose={() => setIsOverviewOpen(false)} />
+            <BakeJournal isOpen={isJournalOpen} onClose={() => setIsJournalOpen(false)} />
         </div>
     );
 };

@@ -1,10 +1,14 @@
 import React, { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Step } from '../types';
 import { useBaking } from '../context/BakingContext';
-import { Check, ChevronDown, ChevronUp, Clock, ArrowRight, ArrowLeft, Scale, ChefHat, Minus, Plus, PartyPopper, NotebookPen, PenLine, Square, SquareCheck, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Clock, CheckCircle2, Circle, AlertCircle, ChefHat, Info, PartyPopper, ChevronDown, RotateCcw, NotebookPen, Scale, Check, Minus, Plus, SquareCheck, Square, PenLine, ArrowRight, ChevronUp, Camera, X, Volume2 } from 'lucide-react';
 import TimerRing from './TimerRing';
 import Assistant from './Assistant';
+import Confetti from './Confetti';
+import { useHaptic } from '../hooks/useHaptic';
+import useWakeLock from '../hooks/useWakeLock';
+import { useSpeech } from '../hooks/useSpeech';
 
 interface StepViewProps {
     step: Step;
@@ -34,6 +38,9 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
     const [isNoteOpen, setIsNoteOpen] = useState(false);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const timerRef = useRef<HTMLDivElement>(null);
+    const triggerHaptic = useHaptic(); // Initialize Haptic Hook
+    useWakeLock(); // Keep screen on while this component is mounted
+    const { speak, stop, isSpeaking } = useSpeech();
 
     // Scroll to top on step change - Aggressive Fix
     useLayoutEffect(() => {
@@ -79,9 +86,11 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
         const isRightSwipe = distance < -minSwipeDistance;
 
         if (isLeftSwipe && currentStepIndex < steps.length - 1) {
+            triggerHaptic(true); // Soft haptic on swipe
             goToNextStep();
         }
         if (isRightSwipe && currentStepIndex > 0) {
+            triggerHaptic(true);
             goToPrevStep();
         }
         touchStartX.current = null;
@@ -94,6 +103,7 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
     const nextStep = steps[currentStepIndex + 1];
 
     const handleStart = () => {
+        triggerHaptic(); // Standard haptic on start
         startStep(step.id);
         // Auto-scroll to timer
         setTimeout(() => {
@@ -101,6 +111,7 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
         }, 100);
     };
     const handleComplete = () => {
+        triggerHaptic(); // Standard haptic on complete
         completeStep(step.id);
         if (!isLastStep) {
             goToNextStep();
@@ -112,6 +123,7 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
     };
 
     const handleDurationChange = (delta: number) => {
+        triggerHaptic(true); // Soft haptic on adjust
         const newDuration = Math.max(1, step.durationMin + delta);
         updateStepDuration(step.id, newDuration);
     };
@@ -175,7 +187,7 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
         if (items.length === 0) return null;
 
         return (
-            <div className="mb-8 mx-4 bg-paper rounded-xl border border-sand/60 p-5 shadow-sm relative overflow-hidden">
+            <div className="mb-8 mx-4 bg-paper dark:bg-stone-800/80 rounded-xl border border-sand/60 dark:border-stone-700/50 p-5 shadow-sm relative overflow-hidden">
                 {/* Decorative Background */}
                 <div className="absolute top-0 right-0 p-4 opacity-5">
                     <Scale size={80} />
@@ -189,23 +201,27 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
                     {items.map((item, idx) => {
                         const isChecked = step.checkedIngredients?.includes(idx);
                         return (
-                            <button
+                            <motion.button
                                 key={idx}
-                                onClick={() => toggleStepIngredient(step.id, idx)}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => {
+                                    triggerHaptic(true); // Soft haptic
+                                    toggleStepIngredient(step.id, idx)
+                                }}
                                 className={`p-3 rounded-lg text-center border min-w-[90px] flex-1 transition-all duration-300
                                 ${isChecked
-                                        ? 'bg-stone-100/50 border-stone-200 opacity-60'
-                                        : 'bg-white/80 border-sand/30 backdrop-blur-sm'
+                                        ? 'bg-stone-100/50 dark:bg-stone-900/50 border-stone-200 dark:border-stone-700 opacity-60'
+                                        : 'bg-white/80 dark:bg-stone-700/80 border-sand/30 dark:border-stone-600 backdrop-blur-sm'
                                     }
                             `}
                             >
-                                <span className={`block font-mono text-lg font-medium transition-all ${isChecked ? 'text-stone-400 line-through' : 'text-charcoal'}`}>
+                                <span className={`block font-mono text-lg font-medium transition-all ${isChecked ? 'text-stone-400 dark:text-stone-600 line-through' : 'text-charcoal dark:text-stone-200'}`}>
                                     {item.amount}
                                 </span>
                                 <span className={`block text-[10px] mt-1 transition-all ${isChecked ? 'text-stone-300' : 'text-stone-400'}`}>
                                     {item.label}
                                 </span>
-                            </button>
+                            </motion.button>
                         );
                     })}
                 </div>
@@ -219,36 +235,103 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
     };
 
     // Celebration Component
+    const [capturedImage, setCapturedImage] = React.useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setCapturedImage(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const { saveBakeToHistory } = useBaking();
+
     if (isLastStep && isCompleted) {
         return (
-            <div className="flex flex-col items-center justify-center h-full animate-fadeIn p-8 text-center bg-cream">
-                <div className="w-24 h-24 bg-sage text-white rounded-full flex items-center justify-center mb-6 shadow-xl shadow-sage/20 animate-bounce">
-                    <PartyPopper size={40} />
+            <>
+                <Confetti />
+                <div className="flex flex-col items-center justify-center h-full animate-fadeIn p-8 text-center bg-cream dark:bg-zinc-900">
+                    <div className="w-24 h-24 bg-sage text-white rounded-full flex items-center justify-center mb-6 shadow-xl shadow-sage/20 animate-bounce">
+                        <PartyPopper size={40} />
+                    </div>
+                    <h2 className="font-serif text-4xl text-charcoal dark:text-stone-200 mb-4">ברכות!</h2>
+                    <p className="font-sans text-lg text-stone-600 dark:text-stone-400 mb-6">
+                        סיימת את תהליך האפייה. הלחם מוכן לצינון.
+                    </p>
+
+                    {/* Photo Capture Section */}
+                    <div className="mb-6 w-full max-w-xs">
+                        <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            ref={fileInputRef}
+                            onChange={handlePhotoCapture}
+                            className="hidden"
+                        />
+                        {capturedImage ? (
+                            <div className="relative">
+                                <img src={capturedImage} alt="Captured Bread" className="w-full h-40 object-cover rounded-xl border-2 border-sage shadow-lg" />
+                                <button
+                                    onClick={() => setCapturedImage(null)}
+                                    className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full"
+                                >
+                                    <X size={14} />
+                                </button>
+                            </div>
+                        ) : (
+                            <button
+                                onClick={() => fileInputRef.current?.click()}
+                                className="w-full py-4 border-2 border-dashed border-stone-300 dark:border-stone-600 rounded-xl text-stone-400 hover:border-sage hover:text-sage transition-colors flex flex-col items-center gap-2"
+                            >
+                                <Camera size={24} />
+                                <span className="text-xs font-bold uppercase tracking-widest">צלם את הלחם</span>
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="flex flex-col gap-3 w-full max-w-xs">
+                        <button
+                            onClick={() => {
+                                saveBakeToHistory({
+                                    rating: 5,
+                                    flourWeight: flourWeight,
+                                    hydration: hydration,
+                                    notes: "נאפה בהצלחה!",
+                                    durationTotalMin: 0,
+                                    image: capturedImage || undefined
+                                });
+                                alert('נשמר ליומן!');
+                            }}
+                            className="bg-charcoal dark:bg-stone-700 text-white dark:text-stone-200 py-3 rounded-xl font-bold hover:bg-stone-700 dark:hover:bg-stone-600 transition-colors flex items-center justify-center gap-2 shadow-lg"
+                        >
+                            <NotebookPen size={18} /> שמור ליומן
+                        </button>
+
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="mt-4 text-sm font-bold uppercase tracking-widest text-charcoal dark:text-stone-400 underline"
+                        >
+                            התחל מחדש
+                        </button>
+                    </div>
                 </div>
-                <h2 className="font-serif text-4xl text-charcoal mb-4">ברכות!</h2>
-                <p className="font-sans text-lg text-stone-600 mb-8">
-                    סיימת את תהליך האפייה. הלחם מוכן לצינון.
-                </p>
-                <p className="font-serif italic text-stone-400 text-sm">
-                    "הריח של לחם טרי הוא הריח של הבית."
-                </p>
-                <button
-                    onClick={() => window.location.reload()}
-                    className="mt-12 text-sm font-bold uppercase tracking-widest text-charcoal underline"
-                >
-                    התחל מחדש
-                </button>
-            </div>
+            </>
         );
     }
 
     return (
         <motion.div
             key={step.id}
-            initial={{ opacity: 0, y: 20, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.98 }}
-            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }} // smooth cubic-bezier
+            initial={{ opacity: 0, y: 30, scale: 0.95, filter: 'blur(4px)' }}
+            animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, y: -20, scale: 0.95, filter: 'blur(2px)' }}
+            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }} // smooth cubic-bezier
             className="flex flex-col h-full max-w-md mx-auto w-full relative"
             onTouchStart={onTouchStart}
             onTouchEnd={onTouchEnd}
@@ -272,6 +355,19 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
                     <p className="text-stone-500 font-sans font-light text-lg max-w-xs mx-auto leading-relaxed">
                         {step.description}
                     </p>
+                    <button
+                        onClick={() => {
+                            if (isSpeaking) {
+                                stop();
+                            } else {
+                                speak(step.description);
+                            }
+                        }}
+                        className={`mt-3 p-2 rounded-full transition-all ${isSpeaking ? 'bg-sage text-white animate-pulse' : 'text-stone-300 hover:text-charcoal hover:bg-stone-100'}`}
+                        title="הקרא הנחיה"
+                    >
+                        {isSpeaking ? <Volume2 size={18} /> : <Volume2 size={18} className="opacity-70" />}
+                    </button>
                 </div>
 
                 {/* Central Visual & Time Controls */}
@@ -286,31 +382,33 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
                     relative w-32 h-32 rounded-full flex items-center justify-center transition-all duration-500 z-10
                     ${isCompleted
                                     ? 'bg-sage text-white shadow-lg shadow-sage/20 scale-90'
-                                    : 'bg-white text-stone-200 shadow-soft border border-stone-100'
+                                    : 'bg-white dark:bg-stone-800 text-stone-200 dark:text-stone-600 shadow-soft border border-stone-100 dark:border-stone-700'
                                 }
                 `}>
                                 {isCompleted ? (
                                     <Check size={40} strokeWidth={1} />
                                 ) : (
-                                    <span className="font-serif text-5xl opacity-20 italic font-light">{currentStepIndex + 1}</span>
+                                    <span className="font-serif text-5xl italic font-light">{currentStepIndex + 1}</span>
                                 )}
                             </div>
 
                             {/* Duration Controls (Only if not running/completed and has duration) */}
                             {!isActive && !isCompleted && step.durationMin > 0 && (
                                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 flex justify-between items-center z-0">
-                                    <button
+                                    <motion.button
+                                        whileTap={{ scale: 0.9 }}
                                         onClick={() => handleDurationChange(-5)}
                                         className="w-8 h-8 rounded-full bg-sand text-charcoal flex items-center justify-center hover:bg-stone-300 transition-colors -ml-4"
                                     >
                                         <Minus size={14} />
-                                    </button>
-                                    <button
+                                    </motion.button>
+                                    <motion.button
+                                        whileTap={{ scale: 0.9 }}
                                         onClick={() => handleDurationChange(5)}
                                         className="w-8 h-8 rounded-full bg-sand text-charcoal flex items-center justify-center hover:bg-stone-300 transition-colors -mr-4"
                                     >
                                         <Plus size={14} />
-                                    </button>
+                                    </motion.button>
                                 </div>
                             )}
                         </div>
@@ -330,10 +428,10 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
 
                 {/* Checklist / Instructions */}
                 <div className="px-4 space-y-4">
-                    <div className={`transition-all duration-500 bg-white rounded-2xl border overflow-hidden ${isTipsOpen ? 'border-stone-100 shadow-sm' : 'border-transparent bg-transparent'}`}>
+                    <div className={`transition-all duration-500 bg-white dark:bg-stone-800/60 rounded-2xl border overflow-hidden ${isTipsOpen ? 'border-stone-100 dark:border-stone-700 shadow-sm' : 'border-transparent bg-transparent'}`}>
                         <button
                             onClick={() => setIsTipsOpen(!isTipsOpen)}
-                            className="w-full flex items-center justify-between p-4 hover:bg-stone-50 transition-colors"
+                            className="w-full flex items-center justify-between p-4 hover:bg-stone-50 dark:hover:bg-stone-800/80 transition-colors"
                         >
                             <div className="flex items-center gap-2">
                                 <ChefHat size={16} className="text-stone-300" strokeWidth={1.5} />
@@ -350,10 +448,14 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
                                     {step.tips?.map((tip, i) => {
                                         const isChecked = step.checkedTips?.includes(i);
                                         return (
-                                            <button
+                                            <motion.button
                                                 key={i}
-                                                onClick={() => toggleStepTip(step.id, i)}
-                                                className={`w-full text-right flex gap-4 p-3 rounded-lg transition-all group ${isChecked ? 'bg-stone-50' : 'hover:bg-cream'}`}
+                                                whileTap={{ scale: 0.98 }}
+                                                onClick={() => {
+                                                    triggerHaptic(true); // Soft haptic
+                                                    toggleStepTip(step.id, i)
+                                                }}
+                                                className={`w-full text-right flex gap-4 p-3 rounded-lg transition-all group ${isChecked ? 'bg-stone-50 dark:bg-stone-900/50' : 'hover:bg-cream dark:hover:bg-stone-700/30'}`}
                                             >
                                                 <div className={`mt-0.5 transition-colors ${isChecked ? 'text-sage' : 'text-stone-300 group-hover:text-stone-400'}`}>
                                                     {isChecked ? <SquareCheck size={20} strokeWidth={1.5} /> : <Square size={20} strokeWidth={1.5} />}
@@ -361,7 +463,7 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
                                                 <p className={`text-base font-sans font-light leading-relaxed transition-all ${isChecked ? 'text-stone-400 line-through decoration-stone-200' : 'text-stone-700'}`}>
                                                     {tip}
                                                 </p>
-                                            </button>
+                                            </motion.button>
                                         );
                                     })}
                                 </div>
@@ -370,10 +472,10 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
                     </div>
 
                     {/* Baker's Journal */}
-                    <div className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
+                    <div className="bg-white dark:bg-stone-800/60 rounded-2xl border border-stone-100 dark:border-stone-700 shadow-sm overflow-hidden">
                         <button
                             onClick={() => setIsNoteOpen(!isNoteOpen)}
-                            className="w-full flex items-center justify-between p-4 hover:bg-stone-50 transition-colors"
+                            className="w-full flex items-center justify-between p-4 hover:bg-stone-50 dark:hover:bg-stone-700/50 transition-colors"
                         >
                             <div className="flex items-center gap-2">
                                 <NotebookPen size={16} className="text-stone-300" strokeWidth={1.5} />
@@ -389,7 +491,7 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
                                     value={step.userNote || ''}
                                     onChange={(e) => saveStepNote(step.id, e.target.value)}
                                     placeholder="כתוב הערות אישיות כאן (טמפרטורה, תחושת הבצק...)"
-                                    className="w-full h-24 bg-paper border border-sand/50 rounded-lg p-3 text-sm font-serif leading-relaxed text-charcoal placeholder-stone-300 focus:outline-none focus:border-crust/30 resize-none shadow-inner"
+                                    className="w-full h-24 bg-paper dark:bg-stone-900 border border-sand/50 dark:border-stone-700 rounded-lg p-3 text-sm font-serif leading-relaxed text-charcoal dark:text-stone-300 placeholder-stone-300 focus:outline-none focus:border-crust/30 resize-none shadow-inner"
                                     style={{ backgroundImage: 'linear-gradient(transparent 1.5em, rgba(0,0,0,0.03) 1.5em)', backgroundSize: '100% 1.6em', lineHeight: '1.6em' }}
                                 />
                             </div>
@@ -418,9 +520,9 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
                         onClick={goToNextStep}
                         className="mt-12 mx-12 pb-8 flex flex-col items-center justify-center cursor-pointer opacity-40 hover:opacity-100 transition-opacity"
                     >
-                        <div className="w-px h-8 bg-stone-200 mb-4"></div>
+                        <div className="w-px h-8 bg-stone-200 dark:bg-stone-700 mb-4"></div>
                         <span className="text-[10px] font-bold tracking-widest uppercase text-stone-400 mb-1">השלב הבא</span>
-                        <div className="flex items-center gap-2 text-charcoal">
+                        <div className="flex items-center gap-2 text-charcoal dark:text-stone-300">
                             <span className="font-serif text-lg">{nextStep.title}</span>
                             <ArrowLeft size={14} className="mt-1 opacity-50" />
                         </div>
@@ -430,13 +532,13 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
 
             {/* Floating Navigation Bar */}
             <div className="fixed bottom-6 left-6 right-6 z-50 max-w-md mx-auto">
-                <div className="bg-white/95 backdrop-blur-md p-2 rounded-2xl shadow-float border border-white/50 flex items-center gap-2">
+                <div className="bg-white/95 dark:bg-stone-800/95 backdrop-blur-md p-2 rounded-2xl shadow-float border border-white/50 dark:border-stone-700/50 flex items-center gap-2">
 
                     {/* Prev Button */}
                     <button
                         onClick={goToPrevStep}
                         disabled={currentStepIndex === 0}
-                        className="w-14 h-14 flex items-center justify-center rounded-xl text-stone-400 hover:bg-stone-50 hover:text-charcoal disabled:opacity-20 disabled:hover:bg-transparent transition-all active:scale-95"
+                        className="w-14 h-14 flex items-center justify-center rounded-xl text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-700 hover:text-charcoal dark:hover:text-stone-200 disabled:opacity-20 disabled:hover:bg-transparent transition-all active:scale-95"
                     >
                         <ArrowRight size={22} strokeWidth={1} />
                     </button>
@@ -503,7 +605,7 @@ const StepView: React.FC<StepViewProps> = ({ step }) => {
                     <button
                         onClick={goToNextStep}
                         disabled={isLastStep}
-                        className="w-14 h-14 flex items-center justify-center rounded-xl text-stone-400 hover:bg-stone-50 hover:text-charcoal disabled:opacity-20 disabled:hover:bg-transparent transition-all active:scale-95"
+                        className="w-14 h-14 flex items-center justify-center rounded-xl text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-700 hover:text-charcoal dark:hover:text-stone-200 disabled:opacity-20 disabled:hover:bg-transparent transition-all active:scale-95"
                     >
                         <ArrowLeft size={22} strokeWidth={1} />
                     </button>
