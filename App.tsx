@@ -109,7 +109,7 @@ const MainView: React.FC = () => {
             {isDimMode && <BatterySaverOverlay onClose={() => setIsDimMode(false)} />}
 
             {/* Header */}
-            <header className={`z-40 px-6 py-6 transition-all relative ${isWizardActive ? 'bg-cream' : 'bg-transparent'}`}>
+            <header className={`z-40 px-6 py-0 transition-all relative ${isWizardActive ? 'bg-cream' : 'bg-transparent'}`}>
                 <GlobalTimer />
 
                 <div className="max-w-md mx-auto flex justify-between items-center">
